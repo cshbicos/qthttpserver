@@ -106,35 +106,40 @@ struct IOChunkedTransfer
 
     void readFromInput()
     {
-        if (!isBufferEmpty()) // We haven't consumed all the data yet.
-            return;
-        beginIndex = 0;
-        endIndex = source->read(buffer, bufferSize);
-        if (endIndex < 0) {
-            endIndex = beginIndex; // Mark the buffer as empty
-            qCWarning(lc, "Error reading chunk: %s", qPrintable(source->errorString()));
-        } else if (endIndex) {
-            memset(buffer + endIndex, 0, sizeof(buffer) - std::size_t(endIndex));
-            writeToOutput();
+        forever{
+            if (!isBufferEmpty()) // We haven't consumed all the data yet.
+                return;
+            beginIndex = 0;
+            endIndex = source->read(buffer, bufferSize);
+            if (endIndex < 0) {
+                endIndex = beginIndex; // Mark the buffer as empty
+                qCWarning(lc, "Error reading chunk: %s", qPrintable(source->errorString()));
+            } else if (endIndex) {
+                memset(buffer + endIndex, 0, sizeof(buffer) - std::size_t(endIndex));
+                if(!writeToOutput())
+                    return;
+            }
         }
     }
 
-    void writeToOutput()
+    bool writeToOutput()
     {
         if (isBufferEmpty())
-            return;
+            return false;
 
         const auto writtenBytes = sink->write(buffer + beginIndex, endIndex);
         if (writtenBytes < 0) {
             qCWarning(lc, "Error writing chunk: %s", qPrintable(sink->errorString()));
-            return;
+            return false;
         }
         beginIndex += writtenBytes;
         if (isBufferEmpty()) {
-            if (source->bytesAvailable())
-                QTimer::singleShot(0, source, [this]() { readFromInput(); });
-            else if (source->atEnd()) // Finishing
+            if (source->bytesAvailable()){
+                return true;
+            }else if (source->atEnd()){ // Finishing
                 source->deleteLater();
+                return false;
+            }
         }
     }
 };
